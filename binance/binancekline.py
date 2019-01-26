@@ -2,15 +2,25 @@
 # _*_ coding:utf-8 _*_
 import requests
 from pymongo import MongoClient
-import random
 import json
+import threading
+import multiprocessing
+import random
+import time
 # https://api.binance.com/api/v1/klines?symbol=BTCUSDT&interval=1m&startTime=1503002399999&limit=1000
+# binance的k线数据
+# 终止日期为2018-11-15 12:00:00
+
+# BNBUSDT_1m, BTCUSDT_1m, EOSUSDT_1m, ETCUSDT_1m, ETHUSDT_1m, XRPUSDT_1m
 settings = {
     'ip': '192.168.1.97',
     'port': 27017,
     'db_name': 'binance_kline',
-    'set_name': 'BTCUSDT'
+    'set_name': 'XRPUSDT_1m'
 }
+conn = MongoClient(settings['ip'], settings['port'])
+db = conn[settings['db_name']]
+my_set = db[settings['set_name']]
 USER_AGENTS = [
     "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; AcooBrowser; .NET CLR 1.1.4322; .NET CLR 2.0.50727)",
     "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0; Acoo Browser; SLCC1; .NET CLR 2.0.50727; Media Center PC 5.0; .NET CLR 3.0.04506)",
@@ -53,34 +63,50 @@ def parse_kline(starttime):
     headers = {
         'User-Agent': random.choice(USER_AGENTS)
     }
-    content = {'symbol': settings['set_name'], 'interval': '1m',  'startTime': starttime, 'limit': 1000}
+    symbol = settings['set_name'].split('_')[0]
+    interval = settings['set_name'].split('_')[1]
+    content = {'symbol': symbol, 'interval': interval,  'startTime': starttime, 'limit': 1000}
     url = 'https://api.binance.com/api/v1/klines'
     with open('proxies.txt', 'r')as f:
-        proxies = f.readlines()[:-1]
-        proxy = random.choice(proxies)
+        proxies = f.readlines()
+        proxy = random.choice(proxies)[:-1]
         response = requests.get(url, headers=headers, params=content, proxies={'http': '{}'.format(proxy)})
         results = json.loads(response.content)
-        for result in results:
-            open_time = result[0]
-            open_price = result[1]
-            high_price = result[2]
-            low_price = result[3]
-            close_price = result[4]
-            volume = result[5]
-            close_time = result[6]
-            # print(open_time)
-            conn = MongoClient(settings['ip'], settings['port'])
-            db = conn[settings['db_name']]
-            my_set = db[settings['set_name']]
-            res = {'open_time': open_time, 'open_price': open_price, 'high_price': high_price, 'low_price': low_price, 'close_price': close_price, 'volume': volume, 'close_time': close_time}
-            if not my_set.find_one({'open_time': open_time}):
-                my_set.insert(res)
-                my_set.create_index([('open_time', 1)], background=True, unique=True)
-                print('{} 存储成功'.format(open_time))
-            else:
-                print('{} save fail'.format(open_time))
+        if len(results) == 0:
+            print('没有更多数据了。。。')
+        else:
+            for result in results:
+                open_time = result[0]
+                open_price = float(result[1])
+                high_price = float(result[2])
+                low_price = float(result[3])
+                close_price = float(result[4])
+                volume = float(result[5])
+                close_time = result[6]
+                # print(open_time)
+                res = {'open_time': open_time, 'open_price': open_price, 'high_price': high_price,
+                       'low_price': low_price, 'close_price': close_price, 'volume': volume, 'close_time': close_time}
+                if not my_set.find_one({'open_time': open_time}):
+                    my_set.insert(res)
+                    my_set.create_index([('open_time', 1)], background=True, unique=True)
+                    print('{} 存储成功'.format(open_time))
+                else:
+                    print('{} save fail'.format(open_time))
 
 
 if __name__ == '__main__':
-    for starttime in range(1502942400000, 1503002400000, 60000000):
-        parse_kline(starttime)
+    pool = multiprocessing.Pool(6)
+    # 通过更改for循环来更改数据范围
+    start_time = 0
+    recent_datas = my_set.find().sort([('open_time', -1)]).limit(1)
+    for recent_data in recent_datas:
+        start_time = recent_data['open_time']
+    timeStamp = time.time()
+    end_time = int(timeStamp*1000)
+    print(start_time)
+    # 1544840160000
+    thread = threading.Thread(target=pool.map,
+                              args=(parse_kline, [starttime for starttime in range(start_time, end_time, 60000000)]))
+    thread.start()
+    thread.join()
+    print('ending---------------')

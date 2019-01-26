@@ -13,7 +13,7 @@ class BitmexklineprojectPipeline(object):
         return item
 
 
-class KlineSaveToMongoDBPipeline(object):
+class SaveToMongoDBPipeline(object):
 
     def open_spider(self, spider):
         conn = MongoClient(settings['MONGODB_SERVER'], settings['MONGODB_PORT'])
@@ -52,7 +52,7 @@ class KlineSaveToMongoDBPipeline(object):
         self.conn.close()
 
 
-class PipelineToCSV(object):
+class SaveToCSV(object):
 
     def process_item(self, item, spider):
         symbol = item['symbol']
@@ -71,7 +71,7 @@ class PipelineToCSV(object):
         binsize = item['binsize']
         result = [str(symbol), str(timestamp), str(open_price), str(close), str(high), str(low), str(trades),
                   str(volume), str(vwap), str(lastSize), str(turnover), str(homeNotional), str(foreignNotional), str(binsize)]
-        with open('XBTZ18_1m.csv', 'a')as f:
+        file_name = settings['MONGODB_SYMBOL']
+        with open('{}.csv'.format(file_name), 'a')as f:
             f.write(','.join(result) + '\n')
-            print('save successfully')
-
+            print('{} save successfully'.format(timestamp))

@@ -12,7 +12,7 @@ from DESAdapter import DESAdapter
 # 解决EOF occurred in violation of protocol错误
 import ssl
 from functools import wraps
-'''根据所给id来获取历史数据'''
+'''根据所给id来获取binance历史数据'''
 
 
 def sslwrap(func):
@@ -25,11 +25,12 @@ def sslwrap(func):
 
 ssl.wrap_socket = sslwrap(ssl.wrap_socket)
 #  不同的交易对的数据需要更换对应的symbol
+# BNBUSDT, BTCUSDT, EOSUSDT, ETCUSDT, ETHUSDT, XRPUSDT
 settings = {
     'ip': '192.168.1.97',
     'port': 27017,
     'db_name': 'binance',
-    'set_name': 'XRPUSDT'
+    'set_name': 'BNBUSDT'
 }
 conn = MongoClient(settings['ip'], settings['port'])
 db = conn[settings['db_name']]
@@ -71,7 +72,7 @@ USER_AGENTS = [
 ]
 
 
-def get_recent(fromId):
+def get_oldtrade(fromId):
     # 请求该网址需要网站申请的api
     headers = {
         'X-MBX-APIKEY': 'TY9aVcqzvog44bnCItjBCpqXMZYwRtlPZ923rI8qXbgLfwB85NZmZGjMfdzxjMpO',
@@ -80,37 +81,48 @@ def get_recent(fromId):
     content = {'symbol': settings['set_name'], 'fromId': fromId, 'limit': 1000}
     url = 'https://api.binance.com/api/v1/historicalTrades'
     with open('proxies.txt', 'r') as f:
-        proxies = f.readlines()[:-1]
-        proxy = random.choice(proxies)
+        proxies = f.readlines()
+        proxy = random.choice(proxies)[:-1]
         ses = requests.session()
         ses.mount('https://', DESAdapter())
-        response = ses.get(url, params=content, headers=headers, proxies={'http': '{}'.format(proxy)})
-        time.sleep(1)
+        response = ses.get(url, params=content, headers=headers, proxies={'http': proxy})
+        time.sleep(2)
         results = json.loads(response.content)
         if len(results) == 0:
             print('没有更多数据了')
         else:
             for result in results:
-                id = result['id']
-                price = result['price']
-                amount = result['qty']
+                trade_id = result['id']
+                price = str(result['price'])
+                amount = str(result['qty'])
                 timestamp = result['time']
                 isBuyerMaker = result['isBuyerMaker']
                 buy_or_sell = 'buy' if isBuyerMaker else 'sell'
-                res = {'id': id, 'time': timestamp, 'price': price, 'amount': amount, 'buy_or_sell': buy_or_sell}
-                print(id, timestamp, price, amount, buy_or_sell)
-                if not db[settings['set_name']].find_one({'id': id}):
+                res = {'id': trade_id, 'time': timestamp, 'price': price, 'amount': amount, 'buy_or_sell': buy_or_sell}
+                print(trade_id, timestamp, price, amount, buy_or_sell)
+                if not db[settings['set_name']].find_one({'id': trade_id}):
                     db[settings['set_name']].insert(res)
                     db[settings['set_name']].create_index([('id', 1)], background=True, unique=True)
-                    print('{} 存储成功'.format(id))
+                    print('{} 存储成功'.format(trade_id))
                 else:
-                    print('{} save fail'.format(id))
+                    print('{} save fail'.format(trade_id))
 
 
 if __name__ == '__main__':
-    pool = multiprocessing.Pool(8)
+    pool = multiprocessing.Pool(6)
     # 通过更改for循环来更改数据范围
-    thread = threading.Thread(target=pool.map, args=(get_recent, [fromId for fromId in range(7471694, 7592594, 1000)]))
+    end_id = 0
+    start_id = 0
+    recent_datas = db[settings['set_name']].find().sort([('id', -1)]).limit(1)
+    for recent_data in recent_datas:
+        end_id = recent_data['id']
+    start_datas = db[settings['set_name']].find().sort([('id', -1)]).skip(1000).limit(1)
+    for start_data in start_datas:
+        start_id = start_data['id']
+    print(start_id, end_id)
+    thread = threading.Thread(target=pool.map, args=(get_oldtrade,
+                                                     [fromId for fromId in range(start_id, end_id, 1000)]))
+    # 18353157 18364907
     thread.start()
     thread.join()
     print('ending---------------')

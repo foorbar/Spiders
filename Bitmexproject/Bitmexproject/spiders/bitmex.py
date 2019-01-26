@@ -120,7 +120,7 @@ class BitmexSpider(scrapy.Spider):
             )
             for result in results:
                 id = result['trdMatchID']
-                price = result['price']
+                price = float(result['price'])
                 amount = result['size']
                 timeStamp = result['timestamp']
                 timeStamp = timeStamp.replace('T', ' ').replace('Z', '')

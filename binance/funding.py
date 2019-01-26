@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 import datetime
-import scrapy
 import random
 import time
 import json
-from ..items import BitmexklineprojectItem
 import ssl
+import requests
 from functools import wraps
-from scrapy.conf import settings
+# 获取bitmex的k线数据
+# 修改symbol时只需修改settings中的symbol即可
 
 
 def sslwrap(func):
@@ -57,111 +57,58 @@ USER_AGENTS = [
         "Mozilla/5.0 (X11; U; Linux x86_64; zh-CN; rv:1.9.2.10) Gecko/20100922 Ubuntu/10.10 (maverick) Firefox/3.6.10"
     ]
 
+headers = {
+    "x-firefox-spdy": "h2",
+    "content-encoding": "gzip",
+    "content-type": "application/json; charset=utf-8",
+    "date": "Wed, 24 Oct 2018 02:46:55 GMT",
+    "etag": "W/\"21248-H1rflx2v7eBIZjnIHTNjK66PepA\"",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-powered-by": "Profit",
+    "x-ratelimit-limit": "150",
+    "x-ratelimit-remaining": "149",
+    # "x-ratelimit-reset": "1540349216",
+    'User-Agent': random.choice(USER_AGENTS),
+}
 
-class BitmexSpider(scrapy.Spider):
-    name = 'bitmexkline'
-    allowed_domains = ['bitmex.com']
-    start_urls = ['http://www.bilibili.com']
-    custom_settings = {
-        'DEFAULT_REQUEST_HEADERS': {
-            "x-firefox-spdy": "h2",
-            "content-encoding": "gzip",
-            "content-type": "application/json; charset=utf-8",
-            "date": "Thu, 15 Nov 2018 03:43:04 GMT",
-            "etag": "W/\"1b0de-4DIg7qN3VB3RRdb7W9G/9e0Wr9w\"",
-            "strict-transport-security": "max-age=31536000; includeSubDomains",
-            "x-powered-by": "Profit",
-            "x-ratelimit-limit": "150",
-            "x-ratelimit-remaining": "149",
-            # "x-ratelimit-reset": "1542253385",
-            'User-Agent': random.choice(USER_AGENTS),
-        }
-    }
 
-    def parse(self, response):
-        yield scrapy.Request(
-            url=response.url,
-            callback=self.get_url,
-            meta={
-                'starttime': 1521179340
-            },
-            dont_filter=True
-        )
 
-    def parse_page(self, response):
-        meta = response.meta
-        binsize = meta['binsize']
+def parse_page(starttime):
+    timeArray = time.localtime(starttime)
+    date = time.strftime("%Y-%m-%d %H:%M:%S", timeArray)
+    symbol = 'XBTUSD'
+    real_url = 'https://www.bitmex.com/api/v1/funding?symbol={}&count=500&reverse=false&startTime={}'.format(
+        symbol, date)
+    with open('proxies.txt', 'r') as f:
+        proxies = f.readlines()
+        proxy = random.choice(proxies)[:-1]
+        response = requests.get(real_url, headers=headers, proxies={'http': '{}'.format(proxy)})
         results = json.loads(response.text)
         if len(results) != 0:
+            for result in results:
+                # symbol = result['symbol']
+                symbol = result['symbol'] if result['symbol'] else None
+                # fundingInterval = result['fundingInterval'] if result['fundingInterval'] else None
+                fundingInterval = '每天8小时'
+                fundingRate = float(result['fundingRate']) if result['fundingRate'] else None
+                fundingRateDaily = float(result['fundingRateDaily']) if result['fundingRateDaily'] else None
+                timeStamp = result['timestamp']
+                timeStamp = timeStamp.replace('T', ' ').replace('Z', '').split('.')[0]
+                d = datetime.datetime.strptime(timeStamp, "%Y-%m-%d %H:%M:%S")
+                # 存储到csv：
+                result = [str(d), str(symbol), str(fundingInterval), str(fundingRate), str(fundingRateDaily)]
+                with open('funding.csv', 'a')as file:
+                    file.write(','.join(result) + '\n')
+                    print('{} save successfully'.format(d))
             last_result = results[-1]
             the_time = last_result['timestamp']
             the_time = the_time.split('.')[0].replace('T', ' ')
             timeArray1 = time.strptime(the_time, "%Y-%m-%d %H:%M:%S")
             real_time = int(time.mktime(timeArray1)) + 1
-            # print(real_time)
-            yield scrapy.Request(
-                url=response.url,
-                callback=self.get_url,
-                meta={
-                    'starttime': real_time
-                },
-                dont_filter=True
-            )
-            for result in results:
-                symbol = result['symbol']
-                open = result['open']
-                high = result['high']
-                low = result['low']
-                close = result['close']
-                trades = result['trades']
-                volume = result['volume']
-                vwap = result['vwap']
-                lastSize = result['lastSize']
-                turnover = result['turnover']
-                homeNotional = result['homeNotional']
-                foreignNotional = result['foreignNotional']
-                timeStamp = result['timestamp']
-                timeStamp = timeStamp.replace('T', ' ').replace('Z', '')
-                d = datetime.datetime.strptime(timeStamp, "%Y-%m-%d %H:%M:%S.%f")
-                t = d.timetuple()
-                timestamp = int(time.mktime(t))
-                timestamp = int(int(str(timestamp) + str("%06d" % d.microsecond)) / 1000)
-                # 存入csv时防止数字显示不完整，存取mongodb时不需要
-                # timestamp = '\'' + str(timestamp)
-                item = BitmexklineprojectItem()
-                item['symbol'] = symbol
-                item['open'] = open
-                item['high'] = high
-                item['low'] = low
-                item['close'] = close
-                item['trades'] = trades
-                item['volume'] = volume
-                item['vwap'] = vwap
-                item['lastSize'] = lastSize
-                item['turnover'] = turnover
-                item['homeNotional'] = homeNotional
-                item['foreignNotional'] = foreignNotional
-                item['timestamp'] = timestamp
-                item['binsize'] = binsize
-                yield item
+            parse_page(real_time)
         else:
             print('没有更多数据了')
 
-    def get_url(self, response):
-        meta = response.meta
-        starttime = meta['starttime']
-        timeArray = time.localtime(starttime)
-        date = time.strftime("%Y-%m-%d %H:%M:%S", timeArray)
-        # 更换symbol时需要更换网址中的参数，同时还需更改数据库的symbol
-        symbol = settings['MONGODB_SYMBOL'].split('_')[0]
-        binsize = settings['MONGODB_SYMBOL'].split('_')[1]
-        real_url = 'https://www.bitmex.com/api/v1/trade/bucketed?binSize={}&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(binsize, symbol, date)
-        yield scrapy.Request(
-            url=real_url,
-            callback=self.parse_page,
-            meta={
-                'binsize': binsize
-            },
-            dont_filter=True
-        )
 
+if __name__ == '__main__':
+    parse_page(1463198400)

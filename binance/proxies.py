@@ -1,7 +1,5 @@
 #!/usr/bin/env	python 
 # _*_ coding:utf-8 _*_
-# *-* coding:utf-8 *-*
-import requests
 from bs4 import BeautifulSoup
 import lxml
 from multiprocessing import Process, Queue
@@ -9,6 +7,7 @@ import random
 import json
 import time
 import requests
+# ---------代理池--------
 
 
 class Proxies(object):

@@ -101,3 +101,20 @@ class BitmexklineprojectDownloaderMiddleware(object):
 
     def spider_opened(self, spider):
         spider.logger.info('Spider opened: %s' % spider.name)
+
+
+# 导入随机模块
+import random
+# 导入官方文档对应的HttpProxyMiddleware
+from scrapy.downloadermiddlewares.httpproxy import HttpProxyMiddleware
+
+
+class IPPOOlS(HttpProxyMiddleware):
+
+    # 请求处理
+    def process_request(self, request, spider):
+        with open('proxies.txt', 'r')as f:
+            proxies = f.readlines()[:-1]
+            proxy = random.choice(proxies).replace('https', 'http')
+            request.meta['proxy'] = proxy
+            print('当前使用的IP为：{}'.format(proxy))

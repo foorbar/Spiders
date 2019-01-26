@@ -6,7 +6,7 @@ import json
 import time
 from pymongo import MongoClient
 import threading
-'''根据所给symbol来获取最近的数据'''
+'''根据所给symbol来获取最近1000条数据'''
 
 
 def recent(symbol):
@@ -25,8 +25,8 @@ def recent(symbol):
     results = json.loads(response.content)
     for result in results:
         id = result['id']
-        price = result['price']
-        amount = result['qty']
+        price = str(result['price'])
+        amount = str(result['qty'])
         timestamp = result['time']
         isBuyerMaker = result['isBuyerMaker']
         buy_or_sell = 'buy' if isBuyerMaker else 'sell'

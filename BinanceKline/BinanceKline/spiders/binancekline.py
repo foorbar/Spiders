@@ -6,7 +6,8 @@ from ..items import BinanceklineItem
 from scrapy.conf import settings
 from pymongo import MongoClient
 # 获取binance的Kline数据
-# 获取不同symbol数据时，需要更换配置文件中的数据库表名
+# 获取不同symbol数据时，需要更换settings文件中的数据库表名
+
 
 class BinanceklineSpider(scrapy.Spider):
     name = 'binancekline'
@@ -15,36 +16,41 @@ class BinanceklineSpider(scrapy.Spider):
     # https://api.binance.com/api/v1/klines?symbol=BTCUSDT&interval=1m&startTime=1541088000000&limit=1000
 
     def start_requests(self):
+        # 连接数据库，获得数据的起始时间
         conn = MongoClient(settings['MONGODB_SERVER'], settings['MONGODB_PORT'])
         db = conn[settings['MONGODB_DB']]
         my_set = db[settings['MONGODB_SYMBOL']]
         recent_data = my_set.find().sort([('open_time', -1)]).limit(1)
+        start_time = 0
         for recent_time in recent_data:
             start_time = recent_time['open_time']
-            end_time = int(time.time())*1000
-            print(start_time, end_time)
-            for startTime in range(start_time, end_time, 60000000):
-                symbol = settings['MONGODB_SYMBOL']
-                url = 'https://api.binance.com/api/v1/klines?symbol={}&interval=1m&startTime={}&limit=1000'.format(symbol, startTime)
-                yield scrapy.Request(
-                    url=url,
-                    callback=self.parse,
-                    meta={},
-                    dont_filter=True
-                )
+        # 以当前时间为结束时间
+        end_time = int(time.time())*1000
+        print(start_time, end_time)
+        for startTime in range(start_time, end_time, 60000000):
+            # 根据settings中的集合名来获得网址中的参数
+            symbol = settings['MONGODB_SYMBOL'].split('_')[0]
+            interval = settings['MONGODB_SYMBOL'].split('_')[1]
+            url = 'https://api.binance.com/api/v1/klines?symbol={}&interval={}&startTime={}&limit=1000'\
+                .format(symbol, interval, startTime)
+            yield scrapy.Request(
+                url=url,
+                callback=self.parse,
+                meta={},
+                dont_filter=True
+            )
 
     def parse(self, response):
         results = json.loads(response.text)
         if len(results) != 0:
             for result in results:
                 open_time = result[0]
-                open_price = result[1]
-                high_price = result[2]
-                low_price = result[3]
-                close_price = result[4]
-                volume = result[5]
+                open_price = float(result[1])
+                high_price = float(result[2])
+                low_price = float(result[3])
+                close_price = float(result[4])
+                volume = float(result[5])
                 close_time = result[6]
-                # print(open_time)
                 item = BinanceklineItem()
                 item['open_time'] = open_time
                 item['open_price'] = open_price
@@ -57,3 +63,4 @@ class BinanceklineSpider(scrapy.Spider):
         else:
             print('没有更多数据了。。。')
 
+# 1542263520000 1542337705000
